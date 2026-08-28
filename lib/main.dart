@@ -769,7 +769,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         IconButton(
-                          icon: const Icon(Icons.restore, code: null, color: Colors.green),
+                          icon: const Icon(Icons.restore, color: Colors.green), // මෙහි තිබූ වැරදි code: null ඉවත් කරන ලදී
                           tooltip: si ? 'යථා තත්ත්වයට පත් කරන්න' : 'Restore',
                           onPressed: () {
                             widget.onRestore(song);
