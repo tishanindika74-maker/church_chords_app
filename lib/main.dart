@@ -123,6 +123,52 @@ class Song {
       );
 }
 
+class SettingsScreen extends StatelessWidget {
+  final double fontSize;
+  final Function(double) onFontSizeChanged;
+  final bool isSinhala;
+  final Function(bool) toggleLanguage;
+
+  const SettingsScreen({
+    super.key,
+    required this.fontSize,
+    required this.onFontSizeChanged,
+    required this.isSinhala,
+    required this.toggleLanguage,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(isSinhala ? 'සැකසුම්' : 'Settings'),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16.0),
+        children: [
+          SwitchListTile(
+            title: Text(isSinhala ? 'සිංහල භාෂාව' : 'Sinhala Language'),
+            value: isSinhala,
+            onChanged: toggleLanguage,
+          ),
+          const Divider(),
+          ListTile(
+            title: Text(isSinhala ? 'අකුරු ප්‍රමාණය (Font Size)' : 'Font Size'),
+            subtitle: Slider(
+              min: 14.0,
+              max: 32.0,
+              divisions: 9,
+              value: fontSize,
+              label: fontSize.round().toString(),
+              onChanged: onFontSizeChanged,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class HomeScreen extends StatefulWidget {
   final VoidCallback toggleTheme;
   final bool isDarkMode;
@@ -600,10 +646,11 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     String processedLyrics = _processLyrics(_currentSong.lyrics, _transposeStep);
     bool si = widget.isSinhala;
 
-    return WillPopScope(
-      onWillPop: () async {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
         Navigator.pop(context, _currentSong);
-        return false;
       },
       child: Scaffold(
         appBar: AppBar(
@@ -612,4 +659,46 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
             IconButton(
               icon: const Icon(Icons.edit),
               onPressed: _editSong,
-              
+            ),
+          ],
+        ),
+        body: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(si ? 'Transpose: ' : 'Transpose: '),
+                  IconButton(
+                    icon: const Icon(Icons.remove),
+                    onPressed: () => setState(() => _transposeStep--),
+                  ),
+                  Text('$_transposeStep', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  IconButton(
+                    icon: const Icon(Icons.add),
+                    onPressed: () => setState(() => _transposeStep++),
+                  ),
+                ],
+              ),
+              const Divider(),
+              Expanded(
+                child: SingleChildScrollView(
+                  controller: _scrollController,
+                  child: Text(
+                    processedLyrics,
+                    style: TextStyle(fontSize: widget.fontSize),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        floatingActionButton: FloatingActionButton(
+          onPressed: _toggleAutoScroll,
+          child: Icon(_isAutoScrolling ? Icons.pause : Icons.play_arrow),
+        ),
+      ),
+    );
+  }
+}
