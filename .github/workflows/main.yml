@@ -24,6 +24,9 @@ jobs:
           flutter-version: '3.19.0'
           channel: 'stable'
 
+      - name: Create Clean Android Project
+        run: flutter create . --platforms=android --org com.church.chords
+
       - name: Install Dependencies
         run: flutter pub get
 
