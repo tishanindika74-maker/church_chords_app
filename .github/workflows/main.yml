@@ -24,14 +24,14 @@ jobs:
           flutter-version: '3.22.2'
           channel: 'stable'
 
-      # මෙතැනදී GitHub එකෙන් පරණ ෆෝල්ඩර් අයින් කරලා අලුත්ම Android ස්ට්‍රක්චර් එක හදනවා
-      - name: Clean and Create Project Structure
+      - name: Create Clean Project
         run: |
           rm -rf android ios
           flutter create . --platforms=android --org com.church.chords
 
-      - name: Install Dependencies
-        run: flutter pub get
+      - name: Restore Main Code & Get Dependencies
+        run: |
+          flutter pub get
 
       - name: Build Debug APK
         run: flutter build apk --debug
