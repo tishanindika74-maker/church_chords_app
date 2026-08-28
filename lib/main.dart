@@ -645,14 +645,15 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
   Widget build(BuildContext context) {
     String processedLyrics = _processLyrics(_currentSong.lyrics, _transposeStep);
     bool si = widget.isSinhala;
-
+  }
     return PopScope(
       canPop: false,
-      onPopInvokedWithResult: (didPop, result) {
+      onPopInvoked: (didPop) {
         if (didPop) return;
         Navigator.pop(context, _currentSong);
       },
       child: Scaffold(
+        // ඉතුරු කෝඩ් එක මේ විදිහටම තියෙන්න දෙන්න...
         appBar: AppBar(
           title: Text(_currentSong.title),
           actions: [
