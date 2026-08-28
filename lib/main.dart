@@ -444,7 +444,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
         children: [
           Container(
             color: Colors.blue.withOpacity(0.1),
-code            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
