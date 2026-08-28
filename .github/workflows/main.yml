@@ -24,14 +24,13 @@ jobs:
           flutter-version: '3.22.2'
           channel: 'stable'
 
-      - name: Create Clean Project
+      - name: Create Clean Android Structure
         run: |
           rm -rf android ios
           flutter create . --platforms=android --org com.church.chords
 
-      - name: Restore Main Code & Get Dependencies
-        run: |
-          flutter pub get
+      - name: Get Dependencies
+        run: flutter pub get
 
       - name: Build Debug APK
         run: flutter build apk --debug
