@@ -24,6 +24,11 @@ jobs:
           flutter-version: '3.22.2'
           channel: 'stable'
 
+      # මෙතැනදී GitHub එකෙන්ම අලුත් Android ප්‍රොජෙක්ට් ෆයිල්ස් හරියටම හැදෙනවා
+      - name: Create Fresh Android Scaffold
+        run: |
+          flutter create . --platforms=android --org com.church.chords
+
       - name: Install Dependencies
         run: flutter pub get
 
