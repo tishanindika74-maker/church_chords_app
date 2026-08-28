@@ -6,36 +6,68 @@ import 'dart:async';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const ChurchChordsApp());
+  runApp(const RhythmOfGraceApp());
 }
 
-class ChurchChordsApp extends StatefulWidget {
-  const ChurchChordsApp({super.key});
+class RhythmOfGraceApp extends StatefulWidget {
+  const RhythmOfGraceApp({super.key});
 
   @override
-  State<ChurchChordsApp> createState() => _ChurchChordsAppState();
+  State<RhythmOfGraceApp> createState() => _RhythmOfGraceAppState();
 }
 
-class _ChurchChordsAppState extends State<ChurchChordsApp> {
+class _RhythmOfGraceAppState extends State<RhythmOfGraceApp> {
   bool _isDarkMode = false;
+  bool _isSinhala = true;
   double _globalFontSize = 20.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _isDarkMode = prefs.getBool('is_dark_mode') ?? false;
+      _isSinhala = prefs.getBool('is_sinhala') ?? true;
+      _globalFontSize = prefs.getDouble('font_size') ?? 20.0;
+    });
+  }
+
+  Future<void> _saveSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('is_dark_mode', _isDarkMode);
+    await prefs.setBool('is_sinhala', _isSinhala);
+    await prefs.setDouble('font_size', _globalFontSize);
+  }
 
   void _toggleTheme() {
     setState(() {
       _isDarkMode = !_isDarkMode;
     });
+    _saveSettings();
+  }
+
+  void _toggleLanguage(bool value) {
+    setState(() {
+      _isSinhala = value;
+    });
+    _saveSettings();
   }
 
   void _updateFontSize(double newSize) {
     setState(() {
       _globalFontSize = newSize;
     });
+    _saveSettings();
   }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Church Chords',
+      title: 'Rhythm of Grace',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         primarySwatch: Colors.blue,
@@ -50,6 +82,8 @@ class _ChurchChordsAppState extends State<ChurchChordsApp> {
       home: HomeScreen(
         toggleTheme: _toggleTheme,
         isDarkMode: _isDarkMode,
+        isSinhala: _isSinhala,
+        toggleLanguage: _toggleLanguage,
         fontSize: _globalFontSize,
         onFontSizeChanged: _updateFontSize,
       ),
@@ -58,29 +92,33 @@ class _ChurchChordsAppState extends State<ChurchChordsApp> {
 }
 
 class Song {
+  String id;
   String title;
   String singlishTitle;
-  String category;
+  String fileName;
   String lyrics;
 
   Song({
+    required this.id,
     required this.title,
     required this.singlishTitle,
-    required this.category,
+    required this.fileName,
     required this.lyrics,
   });
 
   Map<String, dynamic> toJson() => {
+        'id': id,
         'title': title,
         'singlishTitle': singlishTitle,
-        'category': category,
+        'fileName': fileName,
         'lyrics': lyrics,
       };
 
   factory Song.fromJson(Map<String, dynamic> json) => Song(
+        id: json['id'] ?? DateTime.now().millisecondsSinceEpoch.toString(),
         title: json['title'] ?? '',
         singlishTitle: json['singlishTitle'] ?? '',
-        category: json['category'] ?? 'සාමාන්‍ය',
+        fileName: json['fileName'] ?? 'පොදු ෆයිල් එක',
         lyrics: json['lyrics'] ?? '',
       );
 }
@@ -88,6 +126,8 @@ class Song {
 class HomeScreen extends StatefulWidget {
   final VoidCallback toggleTheme;
   final bool isDarkMode;
+  final bool isSinhala;
+  final Function(bool) toggleLanguage;
   final double fontSize;
   final Function(double) onFontSizeChanged;
 
@@ -95,6 +135,8 @@ class HomeScreen extends StatefulWidget {
     super.key,
     required this.toggleTheme,
     required this.isDarkMode,
+    required this.isSinhala,
+    required this.toggleLanguage,
     required this.fontSize,
     required this.onFontSizeChanged,
   });
@@ -107,7 +149,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Song> _songs = [];
   List<Song> _filteredSongs = [];
   final TextEditingController _searchController = TextEditingController();
-  String _selectedCategory = 'සියල්ල';
+  String _selectedFile = 'All';
 
   @override
   void initState() {
@@ -129,9 +171,10 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _songs = [
           Song(
+            id: '1',
             title: "ස්තුතිය පූජා වේවා",
             singlishTitle: "sthuthi puja wewa",
-            category: "ප්‍රශංසා",
+            fileName: "ප්‍රශංසා ගීතිකා",
             lyrics: "[C]ස්තුතිය පූජා [G]වේවා\n[Am]දෙවියන් වහන්සේට [F]වේවා",
           )
         ];
@@ -140,34 +183,64 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _saveSongsToPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+        'saved_songs', jsonEncode(_songs.map((e) => e.toJson()).toList()));
+  }
+
   void _filterSongs() {
     final query = _searchController.text.toLowerCase();
     setState(() {
       _filteredSongs = _songs.where((song) {
         bool matchesSearch = song.title.toLowerCase().contains(query) ||
             song.singlishTitle.toLowerCase().contains(query);
-        bool matchesCategory =
-            _selectedCategory == 'සියල්ල' || song.category == _selectedCategory;
-        return matchesSearch && matchesCategory;
+        bool matchesFile =
+            _selectedFile == 'All' || song.fileName == _selectedFile;
+        return matchesSearch && matchesFile;
       }).toList();
     });
+  }
+
+  List<String> get _availableFiles {
+    Set<String> files = _songs.map((s) => s.fileName).toSet();
+    return files.toList();
   }
 
   void _navigateToAddSong() async {
     final result = await Navigator.push(
       context,
-      MaterialPageRoute(builder: (context) => const AddSongScreen()),
+      MaterialPageRoute(
+          builder: (context) => AddEditSongScreen(existingFiles: _availableFiles)),
     );
-    if (result == true) {
-      _loadSongs();
+    if (result != null && result is Song) {
+      setState(() {
+        _songs.add(result);
+      });
+      await _saveSongsToPrefs();
+      _filterSongs();
     }
+  }
+
+  void _deleteSong(String id) async {
+    setState(() {
+      _songs.removeWhere((song) => song.id == id);
+      _filterSongs();
+    });
+    await _saveSongsToPrefs();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(widget.isSinhala ? 'ගීතිකාව ඉවත් කරන ලදී (Recycle Bin)' : 'Song deleted')),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    bool si = widget.isSinhala;
+    List<String> files = _availableFiles;
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('පල්ලියේ ගීතිකා පුස්තකාලය'),
+        title: Text(si ? 'Rhythm of Grace ගීතිකා පුස්තකාලය' : 'Rhythm of Grace Library'),
         actions: [
           IconButton(
             icon: Icon(widget.isDarkMode ? Icons.light_mode : Icons.dark_mode),
@@ -182,6 +255,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   builder: (context) => SettingsScreen(
                     fontSize: widget.fontSize,
                     onFontSizeChanged: widget.onFontSizeChanged,
+                    isSinhala: widget.isSinhala,
+                    toggleLanguage: widget.toggleLanguage,
                   ),
                 ),
               );
@@ -197,38 +272,52 @@ class _HomeScreenState extends State<HomeScreen> {
               controller: _searchController,
               onChanged: (val) => _filterSongs(),
               decoration: InputDecoration(
-                hintText: 'ගීතිකාව සොයන්න (සිංහල / Singlish)...',
+                hintText: si ? 'ගීතිකාව සොයන්න (සිංහල / Singlish)...' : 'Search song...',
                 prefixIcon: const Icon(Icons.search),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                 filled: true,
               ),
             ),
           ),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Row(
-              children: ['සියල්ල', 'ප්‍රශංසා', 'නමස්කාර', 'පන්ති ගීතිකා', 'විශේෂ']
-                  .map((cat) => Padding(
+          if (files.isNotEmpty)
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8.0),
+                    child: ChoiceChip(
+                      label: Text(si ? 'සියලුම ගීතිකා' : 'All Files'),
+                      selected: _selectedFile == 'All',
+                      onSelected: (selected) {
+                        setState(() {
+                          _selectedFile = 'All';
+                          _filterSongs();
+                        });
+                      },
+                    ),
+                  ),
+                  ...files.map((file) => Padding(
                         padding: const EdgeInsets.only(right: 8.0),
                         child: ChoiceChip(
-                          label: Text(cat),
-                          selected: _selectedCategory == cat,
+                          label: Text(file),
+                          selected: _selectedFile == file,
                           onSelected: (selected) {
                             setState(() {
-                              _selectedCategory = cat;
+                              _selectedFile = file;
                               _filterSongs();
                             });
                           },
                         ),
-                      ))
-                  .toList(),
+                      )),
+                ],
+              ),
             ),
-          ),
           const SizedBox(height: 10),
           Expanded(
             child: _filteredSongs.isEmpty
-                ? const Center(child: Text('ගීතිකා හමු නොවීය'))
+                ? Center(child: Text(si ? 'ගීතිකා හමු නොවීය' : 'No songs found'))
                 : ListView.builder(
                     itemCount: _filteredSongs.length,
                     itemBuilder: (context, index) {
@@ -238,17 +327,41 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: ListTile(
                           title: Text(song.title,
                               style: const TextStyle(fontWeight: FontWeight.bold)),
-                          subtitle: Text('${song.category} • ${song.singlishTitle}',
+                          subtitle: Text('📁 ${song.fileName} • ${song.singlishTitle}',
                               style: TextStyle(color: Colors.grey[600])),
-                          trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                          onTap: () {
-                            Navigator.push(
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.delete, color: Colors.redAccent),
+                                onPressed: () => _deleteSong(song.id),
+                                tooltip: si ? 'මකන්න' : 'Delete',
+                              ),
+                              const Icon(Icons.arrow_forward_ios, size: 16),
+                            ],
+                          ),
+                          onTap: () async {
+                            final updatedSong = await Navigator.push(
                               context,
                               MaterialPageRoute(
                                 builder: (context) => SongDetailScreen(
-                                    song: song, fontSize: widget.fontSize),
+                                  song: song,
+                                  fontSize: widget.fontSize,
+                                  isSinhala: si,
+                                  existingFiles: files,
+                                ),
                               ),
                             );
+                            if (updatedSong != null && updatedSong is Song) {
+                              setState(() {
+                                int idx = _songs.indexWhere((s) => s.id == updatedSong.id);
+                                if (idx != -1) {
+                                  _songs[idx] = updatedSong;
+                                }
+                              });
+                              await _saveSongsToPrefs();
+                              _filterSongs();
+                            }
                           },
                         ),
                       );
@@ -260,54 +373,68 @@ class _HomeScreenState extends State<HomeScreen> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _navigateToAddSong,
         icon: const Icon(Icons.add),
-        label: const Text('ගීතිකාවක් එකතු කරන්න'),
+        label: Text(si ? 'ගීතිකාවක් එකතු කරන්න' : 'Add Song'),
       ),
     );
   }
 }
 
-class AddSongScreen extends StatefulWidget {
-  const AddSongScreen({super.key});
+class AddEditSongScreen extends StatefulWidget {
+  final Song? songToEdit;
+  final List<String> existingFiles;
+
+  const AddEditSongScreen({super.key, this.songToEdit, required this.existingFiles});
 
   @override
-  State<AddSongScreen> createState() => _AddSongScreenState();
+  State<AddEditSongScreen> createState() => _AddEditSongScreenState();
 }
 
-class _AddSongScreenState extends State<AddSongScreen> {
-  final _titleController = TextEditingController();
-  final _singlishController = TextEditingController();
-  final _lyricsController = TextEditingController();
-  String _selectedCategory = 'ප්‍රශංසා';
+class _AddEditSongScreenState extends State<AddEditSongScreen> {
+  late TextEditingController _titleController;
+  late TextEditingController _singlishController;
+  late TextEditingController _lyricsController;
+  late TextEditingController _fileController;
+  bool _isNewFileSelected = false;
+  String _selectedExistingFile = '';
 
-  Future<void> _saveSong() async {
+  @override
+  void initState() {
+    super.initState();
+    _titleController = TextEditingController(text: widget.songToEdit?.title ?? '');
+    _singlishController = TextEditingController(text: widget.songToEdit?.singlishTitle ?? '');
+    _lyricsController = TextEditingController(text: widget.songToEdit?.lyrics ?? '');
+    
+    String initialFile = widget.songToEdit?.fileName ?? (widget.existingFiles.isNotEmpty ? widget.existingFiles[0] : 'පොදු ෆයිල් එක');
+    if (widget.existingFiles.contains(initialFile)) {
+      _selectedExistingFile = initialFile;
+    } else {
+      _selectedExistingFile = initialFile;
+    }
+    _fileController = TextEditingController(text: initialFile);
+  }
+
+  void _save() {
     if (_titleController.text.isEmpty || _lyricsController.text.isEmpty) return;
 
-    final prefs = await SharedPreferences.getInstance();
-    final String? songsString = prefs.getString('saved_songs');
-    List<Song> songs = [];
+    String finalFile = _isNewFileSelected ? _fileController.text.trim() : _selectedExistingFile;
+    if (finalFile.isEmpty) finalFile = 'පොදු ෆයිල් එක';
 
-    if (songsString != null) {
-      List decoded = jsonDecode(songsString);
-      songs = decoded.map((item) => Song.fromJson(item)).toList();
-    }
-
-    songs.add(Song(
-      title: _titleController.text,
-      singlishTitle: _singlishController.text,
-      category: _selectedCategory,
+    Song song = Song(
+      id: widget.songToEdit?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
+      title: _titleController.text.trim(),
+      singlishTitle: _singlishController.text.trim(),
+      fileName: finalFile,
       lyrics: _lyricsController.text,
-    ));
+    );
 
-    await prefs.setString(
-        'saved_songs', jsonEncode(songs.map((e) => e.toJson()).toList()));
-
-    Navigator.pop(context, true);
+    Navigator.pop(context, song);
   }
 
   @override
   Widget build(BuildContext context) {
+    bool isEditing = widget.songToEdit != null;
     return Scaffold(
-      appBar: AppBar(title: const Text('නව ගීතිකාවක් එක් කරන්න')),
+      appBar: AppBar(title: Text(isEditing ? 'ගීතිකාව වෙනස් කරන්න (Edit Song)' : 'නව ගීතිකාවක් එක් කරන්න')),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: ListView(
@@ -321,16 +448,36 @@ class _AddSongScreenState extends State<AddSongScreen> {
               controller: _singlishController,
               decoration: const InputDecoration(labelText: 'Singlish නම (උදා: sthuthi puja wewa)'),
             ),
-            const SizedBox(height: 10),
-            DropdownButtonFormField<String>(
-              value: _selectedCategory,
-              decoration: const InputDecoration(labelText: 'ගීතිකා කාණ්ඩය (Category)'),
-              items: ['ප්‍රශංසා', 'නමස්කාර', 'පන්ති ගීතිකා', 'විශේෂ']
-                  .map((cat) => DropdownMenuItem(value: cat, child: Text(cat)))
-                  .toList(),
-              onChanged: (val) => setState(() => _selectedCategory = val!),
+            const SizedBox(height: 15),
+            Row(
+              children: [
+                Expanded(
+                  child: _isNewFileSelected
+                      ? TextField(
+                          controller: _fileController,
+                          decoration: const InputDecoration(labelText: 'අලුත් ෆයිල් නම (New File Name)'),
+                        )
+                      : DropdownButtonFormField<String>(
+                          value: widget.existingFiles.contains(_selectedExistingFile) ? _selectedExistingFile : null,
+                          decoration: const InputDecoration(labelText: 'ෆයිල් එකක් තෝරන්න (Select File)'),
+                          items: widget.existingFiles
+                              .map((f) => DropdownMenuItem(value: f, child: Text(f)))
+                              .toList(),
+                          onChanged: (val) => setState(() => _selectedExistingFile = val ?? ''),
+                        ),
+                ),
+                IconButton(
+                  icon: Icon(_isNewFileSelected ? Icons.list : Icons.create_new_folder, color: Colors.blue),
+                  onPressed: () {
+                    setState(() {
+                      _isNewFileSelected = !_isNewFileSelected;
+                    });
+                  },
+                  tooltip: 'අලුත් ෆයිල් එකක් සාදන්න / ලැයිස්තුවෙන් තෝරන්න',
+                ),
+              ],
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 15),
             TextField(
               controller: _lyricsController,
               maxLines: 8,
@@ -342,9 +489,9 @@ class _AddSongScreenState extends State<AddSongScreen> {
             ),
             const SizedBox(height: 20),
             ElevatedButton(
-              onPressed: _saveSong,
+              onPressed: _save,
               style: ElevatedButton.styleFrom(padding: const EdgeInsets.all(14)),
-              child: const Text('සුරකින්න (Save)', style: TextStyle(fontSize: 16)),
+              child: Text(isEditing ? 'යාවත්කාලීන කරන්න (Update)' : 'සුරකින්න (Save)', style: const TextStyle(fontSize: 16)),
             ),
           ],
         ),
@@ -356,13 +503,23 @@ class _AddSongScreenState extends State<AddSongScreen> {
 class SongDetailScreen extends StatefulWidget {
   final Song song;
   final double fontSize;
-  const SongDetailScreen({super.key, required this.song, required this.fontSize});
+  final bool isSinhala;
+  final List<String> existingFiles;
+
+  const SongDetailScreen({
+    super.key,
+    required this.song,
+    required this.fontSize,
+    required this.isSinhala,
+    required this.existingFiles,
+  });
 
   @override
   State<SongDetailScreen> createState() => _SongDetailScreenState();
 }
 
 class _SongDetailScreenState extends State<SongDetailScreen> {
+  late Song _currentSong;
   int _transposeStep = 0;
   final ScrollController _scrollController = ScrollController();
   Timer? _autoScrollTimer;
@@ -370,6 +527,12 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
   double _scrollSpeed = 1.0;
 
   final List<String> _notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
+  @override
+  void initState() {
+    super.initState();
+    _currentSong = widget.song;
+  }
 
   String _transposeChord(String chord, int step) {
     if (step == 0) return chord;
@@ -412,6 +575,23 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     }
   }
 
+  void _editSong() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AddEditSongScreen(
+          songToEdit: _currentSong,
+          existingFiles: widget.existingFiles,
+        ),
+      ),
+    );
+    if (result != null && result is Song) {
+      setState(() {
+        _currentSong = result;
+      });
+    }
+  }
+
   @override
   void dispose() {
     _autoScrollTimer?.cancel();
@@ -421,101 +601,14 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    String processedLyrics = _processLyrics(widget.song.lyrics, _transposeStep);
+    String processedLyrics = _processLyrics(_currentSong.lyrics, _transposeStep);
+    bool si = widget.isSinhala;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.song.title),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.remove),
-            onPressed: () => setState(() => _transposeStep--),
-            tooltip: 'Transpose Down',
-          ),
-          Center(child: Text('$_transposeStep', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold))),
-          IconButton(
-            icon: const Icon(Icons.add),
-            onPressed: () => setState(() => _transposeStep++),
-            tooltip: 'Transpose Up',
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          Container(
-            color: Colors.blue.withOpacity(0.1),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                ElevatedButton.icon(
-                  onPressed: _toggleAutoScroll,
-                  icon: Icon(_isAutoScrolling ? Icons.pause : Icons.play_arrow),
-                  label: Text(_isAutoScrolling ? 'නවතන්න' : 'Auto Scroll'),
-                ),
-                Row(
-                  children: [
-                    const Text('වේගය: '),
-                    Slider(
-                      value: _scrollSpeed,
-                      min: 0.5,
-                      max: 3.0,
-                      divisions: 5,
-                      label: _scrollSpeed.toString(),
-                      onChanged: (val) => setState(() => _scrollSpeed = val),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: SingleChildScrollView(
-              controller: _scrollController,
-              padding: const EdgeInsets.all(20.0),
-              child: Text(
-                processedLyrics,
-                style: TextStyle(fontSize: widget.fontSize, height: 1.8),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class SettingsScreen extends StatelessWidget {
-  final double fontSize;
-  final Function(double) onFontSizeChanged;
-
-  const SettingsScreen({super.key, required this.fontSize, required this.onFontSizeChanged});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('සෙටින්ග්ස් (Settings)')),
-      body: ListView(
-        padding: const EdgeInsets.all(16.0),
-        children: [
-          const Text('ගීතිකා අකුරු ප්‍රමාණය (Font Size)',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-          Slider(
-            value: fontSize,
-            min: 14.0,
-            max: 32.0,
-            divisions: 9,
-            label: fontSize.round().toString(),
-            onChanged: (val) => onFontSizeChanged(val),
-          ),
-          const Divider(),
-          const ListTile(
-            leading: Icon(Icons.screen_lock_portrait),
-            title: Text('සේවා කාලය තුළ Screen එක නිමී යාම වැළැක්වීම'),
-            subtitle: Text('ක්‍රියාත්මකයි (Wakelock Enabled)'),
-          ),
-        ],
-      ),
-    );
-  }
-}
+    return WillPopScope(
+      onWillPop: () async {
+        Navigator.pop(context, _currentSong);
+        return false;
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(
