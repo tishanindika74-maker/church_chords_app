@@ -1,0 +1,520 @@
+import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
+import 'dart:async';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // Firebase ඉනිෂියායිස් කිරීම (පොදු ලයිබ්‍රිය සඳහා)
+  try {
+    await Firebase.initializeApp();
+  } catch (e) {
+    debugPrint("Firebase initialization error: $e");
+  }
+  runApp(const ChurchChordsApp());
+}
+
+class ChurchChordsApp extends StatefulWidget {
+  const ChurchChordsApp({super.key});
+
+  @override
+  State<ChurchChordsApp> createState() => _ChurchChordsAppState();
+}
+
+class _ChurchChordsAppState extends State<ChurchChordsApp> {
+  bool _isDarkMode = false;
+  double _globalFontSize = 20.0; // සෙටින්ග්ස් වලින් වෙනස් කළ හැකි අකුරු ප්‍රමාණය
+
+  void _toggleTheme() {
+    setState(() {
+      _isDarkMode = !_isDarkMode;
+    });
+  }
+
+  void _updateFontSize(double newSize) {
+    setState(() {
+      _globalFontSize = newSize;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Church Chords',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
+        brightness: Brightness.light,
+        scaffoldBackgroundColor: Colors.grey[100],
+      ),
+      darkTheme: ThemeData(
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: Colors.grey[900],
+      ),
+      themeMode: _isDarkMode ? ThemeMode.dark : ThemeMode.light,
+      home: HomeScreen(
+        toggleTheme: _toggleTheme,
+        isDarkMode: _isDarkMode,
+        fontSize: _globalFontSize,
+        onFontSizeChanged: _updateFontSize,
+      ),
+    );
+  }
+}
+
+// ගීතිකා දත්ත ආකෘතිය (Library & Categories සඳහා)
+class Song {
+  String id;
+  String title;
+  String singlishTitle;
+  String category; // කාණ්ඩය (උදා: ප්‍රශංසා, නමස්කාර, විශේෂ ආදී වශයෙන්)
+  String lyrics;
+
+  Song({
+    this.id = '',
+    required this.title,
+    required this.singlishTitle,
+    required this.category,
+    required this.lyrics,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'title': title,
+        'singlishTitle': singlishTitle,
+        'category': category,
+        'lyrics': lyrics,
+      };
+
+  factory Song.fromFirestore(DocumentSnapshot doc) {
+    Map data = doc.data() as Map<String, dynamic>;
+    return Song(
+      id: doc.id,
+      title: data['title'] ?? '',
+      singlishTitle: data['singlishTitle'] ?? '',
+      category: data['category'] ?? 'සාමාන්‍ය',
+      lyrics: data['lyrics'] ?? '',
+    );
+  }
+}
+
+class HomeScreen extends StatefulWidget {
+  final VoidCallback toggleTheme;
+  final bool isDarkMode;
+  final double fontSize;
+  final Function(double) onFontSizeChanged;
+
+  const HomeScreen({
+    super.key,
+    required this.toggleTheme,
+    required this.isDarkMode,
+    required this.fontSize,
+    required this.onFontSizeChanged,
+  });
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  String _selectedCategory = 'සියල්ල';
+
+  @override
+  void initState() {
+    super.initState();
+    // සේවය වෙලාවට ෆෝන් එක නිමී යාම (Screen Sleep වීම) වැළැක්වීම
+    WakelockPlus.enable();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('පල්ලියේ ගීතිකා පුස්තකාලය'),
+        actions: [
+          IconButton(
+            icon: Icon(widget.isDarkMode ? Icons.light_mode : Icons.dark_mode),
+            onPressed: widget.toggleTheme,
+            tooltip: 'Theme මාරු කරන්න',
+          ),
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => SettingsScreen(
+                    fontSize: widget.fontSize,
+                    onFontSizeChanged: widget.onFontSizeChanged,
+                  ),
+                ),
+              );
+            },
+            tooltip: 'Settings',
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          // සෙවුම් තීරුව (Search Bar)
+          Padding(
+            padding: const EdgeInsets.all(12.0),
+            child: TextField(
+              controller: _searchController,
+              onChanged: (value) => setState(() => _searchQuery = value.toLowerCase()),
+              decoration: InputDecoration(
+                hintText: 'ගීතිකාව සොයන්න (සිංහල / Singlish)...',
+                prefixIcon: const Icon(Icons.search),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                filled: true,
+              ),
+            ),
+          ),
+          // කාණ්ඩ (Categories Filter)
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              children: ['සියල්ල', 'ප්‍රශංසා', 'නමස්කාර', 'පන්ති ගීතිකා', 'විශේෂ']
+                  .map((cat) => Padding(
+                        padding: const EdgeInsets.only(right: 8.0),
+                        child: ChoiceChip(
+                          label: Text(cat),
+                          selected: _selectedCategory == cat,
+                          onSelected: (selected) => setState(() => _selectedCategory = cat),
+                        ),
+                      ))
+                  .toList(),
+            ),
+          ),
+          const SizedBox(height: 10),
+          // Firebase එකෙන් ලයිව් ගීතිකා ලෝඩ් වීම (කණ්ඩායමේ සැමට පෙනෙන සේ)
+          Expanded(
+            child: StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance.collection('church_songs').snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return const Center(child: Text('දත්ත ලබාගැනීමේ දෝෂයක් ඇත.'));
+                }
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                final docs = snapshot.data!.docs;
+                List<Song> songs = docs.map((doc) => Song.fromFirestore(doc)).toList();
+
+                // ෆිල්ටර් කිරීම (Search සහ Category අනුව)
+                List<Song> filteredSongs = songs.where((song) {
+                  bool matchesSearch = song.title.toLowerCase().contains(_searchQuery) ||
+                      song.singlishTitle.toLowerCase().contains(_searchQuery);
+                  bool matchesCategory = _selectedCategory == 'සියල්ල' || song.category == _selectedCategory;
+                  return matchesSearch && matchesCategory;
+                }).toList();
+
+                if (filteredSongs.isEmpty) {
+                  return const Center(child: Text('ගීතිකා හමු නොවීය'));
+                }
+
+                return ListView.builder(
+                  itemCount: filteredSongs.length,
+                  itemBuilder: (context, index) {
+                    final song = filteredSongs[index];
+                    return Card(
+                      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      child: ListTile(
+                        title: Text(song.title, style: const TextStyle(fontWeight: FontWeight.bold)),
+                        subtitle: Text('${song.category} • ${song.singlishTitle}',
+                            style: TextStyle(color: Colors.grey[600])),
+                        trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => SongDetailScreen(song: song, fontSize: widget.fontSize),
+                            ),
+                          );
+                        },
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () {
+          Navigator.push(context, MaterialPageRoute(builder: (context) => const AddSongScreen()));
+        },
+        icon: const Icon(Icons.add),
+        label: const Text('ගීතිකාවක් එකතු කරන්න'),
+      ),
+    );
+  }
+}
+
+// ගීතිකා ඇඩ් කර පොදු දත්ත ගබඩාවට (Firebase) යැවීම
+class AddSongScreen extends StatefulWidget {
+  const AddSongScreen({super.key});
+
+  @override
+  State<AddSongScreen> createState() => _AddSongScreenState();
+}
+
+class _AddSongScreenState extends State<AddSongScreen> {
+  final _titleController = TextEditingController();
+  final _singlishController = TextEditingController();
+  final _lyricsController = TextEditingController();
+  String _selectedCategory = 'ප්‍රශංසා';
+  bool _isLoading = false;
+
+  Future<void> _saveSongToCloud() async {
+    if (_titleController.text.isEmpty || _lyricsController.text.isEmpty) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      await FirebaseFirestore.instance.collection('church_songs').add({
+        'title': _titleController.text,
+        'singlishTitle': _singlishController.text,
+        'category': _selectedCategory,
+        'lyrics': _lyricsController.text,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      Navigator.pop(context);
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('දෝෂයක් සිදු විය: $e')),
+      );
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('አලුත් ගීතිකාවක් එක් කරන්න (කණ්ඩායමටම පෙනේ)')),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: ListView(
+          children: [
+            TextField(
+              controller: _titleController,
+              decoration: const InputDecoration(labelText: 'ගීතිකාවේ නම (සිංහල / English)'),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _singlishController,
+              decoration: const InputDecoration(labelText: 'Singlish නම (උදා: sthuthi puja wewa)'),
+            ),
+            const SizedBox(height: 10),
+            DropdownButtonFormField<String>(
+              value: _selectedCategory,
+              decoration: const InputDecoration(labelText: 'ගීතිකා කාණ්ඩය (Category)'),
+              items: ['ප්‍රශංසා', 'නමස්කාර', 'පන්ති ගීතිකා', 'විශේෂ']
+                  .map((cat) => DropdownMenuItem(value: cat, child: Text(cat)))
+                  .toList(),
+              onChanged: (val) => setState(() => _selectedCategory = val!),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _lyricsController,
+              maxLines: 8,
+              decoration: const InputDecoration(
+                labelText: 'Lyrics සහ Chords (උදා: [C]ස්තුතිය [G]වේවා)',
+                alignLabelWithHint: true,
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: _isLoading ? null : _saveSongToCloud,
+              style: ElevatedButton.styleFrom(padding: const EdgeInsets.all(14)),
+              child: _isLoading
+                  const CircularProgressIndicator()
+                  : const Text('පොදු පුස්තකාලයට සුරකින්න (Save)', style: TextStyle(fontSize: 16)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ගීතිකාව පෙන්වන සහ Transpose/Auto-scroll සහිත ස්ක්‍රීන් එක
+class SongDetailScreen extends StatefulWidget {
+  final Song song;
+  final double fontSize;
+  const SongDetailScreen({super.key, required this.song, required this.fontSize});
+
+  @override
+  State<SongDetailScreen> createState() => _SongDetailScreenState();
+}
+
+class _SongDetailScreenState extends State<SongDetailScreen> {
+  int _transposeStep = 0;
+  final ScrollController _scrollController = ScrollController();
+  Timer? _autoScrollTimer;
+  bool _isAutoScrolling = false;
+  double _scrollSpeed = 1.0;
+
+  final List<String> _notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
+  String _transposeChord(String chord, int step) {
+    if (step == 0) return chord;
+    RegExp regExp = RegExp(r'([A-G][#b]?)');
+    return chord.replaceAllMapped(regExp, (match) {
+      String note = match.group(0)!;
+      int index = _notes.indexOf(note);
+      if (index == -1) return note;
+      int newIndex = (index + step) % _notes.length;
+      if (newIndex < 0) newIndex += _notes.length;
+      return _notes[newIndex];
+    });
+  }
+
+  String _processLyrics(String lyrics, int step) {
+    if (step == 0) return lyrics;
+    return lyrics.replaceAllMapped(RegExp(r'\[(.*?)\]'), (match) {
+      String chord = match.group(1)!;
+      return '[${_transposeChord(chord, step)}]';
+    });
+  }
+
+  void _toggleAutoScroll() {
+    if (_isAutoScrolling) {
+      _autoScrollTimer?.cancel();
+      setState(() => _isAutoScrolling = false);
+    } else {
+      setState(() => _isAutoScrolling = true);
+      _autoScrollTimer = Timer.periodic(const Duration(milliseconds: 50), (timer) {
+        if (_scrollController.hasClients) {
+          double maxScroll = _scrollController.position.maxScrollExtent;
+          double currentScroll = _scrollController.offset;
+          if (currentScroll >= maxScroll) {
+            _toggleAutoScroll();
+          } else {
+            _scrollController.jumpTo(currentScroll + _scrollSpeed);
+          }
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _autoScrollTimer?.cancel();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    String processedLyrics = _processLyrics(widget.song.lyrics, _transposeStep);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.song.title),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.remove),
+            onPressed: () => setState(() => _transposeStep--),
+            tooltip: 'Transpose Down',
+          ),
+          Center(child: Text('$_transposeStep', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold))),
+          IconButton(
+            icon: const Icon(Icons.add),
+            onPressed: () => setState(() => _transposeStep++),
+            tooltip: 'Transpose Up',
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          Container(
+            color: Colors.blue.withOpacity(0.1),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: _toggleAutoScroll,
+                  icon: Icon(_isAutoScrolling ? Icons.pause : Icons.play_arrow),
+                  label: Text(_isAutoScrolling ? 'නවතන්න' : 'Auto Scroll'),
+                ),
+                Row(
+                  children: [
+                    const Text('වේගය: '),
+                    Slider(
+                      value: _scrollSpeed,
+                      min: 0.5,
+                      max: 3.0,
+                      divisions: 5,
+                      label: _scrollSpeed.toString(),
+                      onChanged: (val) => setState(() => _scrollSpeed = val),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: SingleChildScrollView(
+              controller: _scrollController,
+              padding: const EdgeInsets.all(20.0),
+              child: Text(
+                processedLyrics,
+                style: TextStyle(fontSize: widget.fontSize, height: 1.8),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// අමතර Settings ස්ක්‍රීන් එක
+class SettingsScreen extends StatelessWidget {
+  final double fontSize;
+  final Function(double) onFontSizeChanged;
+
+  const SettingsScreen({super.key, required this.fontSize, required this.onFontSizeChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('සෙටින්ග්ස් (Settings)')),
+      body: ListView(
+        padding: const EdgeInsets.all(16.0),
+        children: [
+          const Text('ගීතිකා අකුරු ප්‍රමාණය (Font Size)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          Slider(
+            value: fontSize,
+            min: 14.0,
+            max: 32.0,
+            divisions: 9,
+            label: fontSize.round().toString(),
+            onChanged: (val) => onFontSizeChanged(val),
+          ),
+          const Divider(),
+          const ListTile(
+            leading: Icon(Icons.screen_lock_portrait),
+            title: Text('සේවා කාලය තුළ Screen එක නිමී යාම වැළැක්වීම'),
+            subtitle: Text('සක්‍රීය කර ඇත (Wakelock Enabled)'),
+          ),
+          const Divider(),
+          const ListTile(
+            leading: Icon(Icons.group),
+            title: Text('කණ්ඩායම් පුස්තකාලය (Cloud Sync)'),
+            subtitle: Text('සියලු දෙනා එකම Database එකක් පාවිච්චි කරයි.'),
+          ),
+        ],
+      ),
+    );
+  }
+}
