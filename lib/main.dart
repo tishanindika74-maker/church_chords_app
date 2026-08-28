@@ -95,78 +95,36 @@ class Song {
   String id;
   String title;
   String singlishTitle;
-  String fileName;
+  String folderName;
   String lyrics;
+  bool isDeleted;
 
   Song({
     required this.id,
     required this.title,
     required this.singlishTitle,
-    required this.fileName,
+    required this.folderName,
     required this.lyrics,
+    this.isDeleted = false,
   });
 
   Map<String, dynamic> toJson() => {
         'id': id,
         'title': title,
         'singlishTitle': singlishTitle,
-        'fileName': fileName,
+        'folderName': folderName,
         'lyrics': lyrics,
+        'isDeleted': isDeleted,
       };
 
   factory Song.fromJson(Map<String, dynamic> json) => Song(
-        id: json['id'] ?? DateTime.now().millisecondsSinceEpoch.toString(),
+        id: json['id'] ?? DateTime.now().toIso8601String(),
         title: json['title'] ?? '',
         singlishTitle: json['singlishTitle'] ?? '',
-        fileName: json['fileName'] ?? 'පොදු ෆයිල් එක',
+        folderName: json['folderName'] ?? 'සාමාන්‍ය',
         lyrics: json['lyrics'] ?? '',
+        isDeleted: json['isDeleted'] ?? false,
       );
-}
-
-class SettingsScreen extends StatelessWidget {
-  final double fontSize;
-  final Function(double) onFontSizeChanged;
-  final bool isSinhala;
-  final Function(bool) toggleLanguage;
-
-  const SettingsScreen({
-    super.key,
-    required this.fontSize,
-    required this.onFontSizeChanged,
-    required this.isSinhala,
-    required this.toggleLanguage,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(isSinhala ? 'සැකසුම්' : 'Settings'),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(16.0),
-        children: [
-          SwitchListTile(
-            title: Text(isSinhala ? 'සිංහල භාෂාව' : 'Sinhala Language'),
-            value: isSinhala,
-            onChanged: toggleLanguage,
-          ),
-          const Divider(),
-          ListTile(
-            title: Text(isSinhala ? 'අකුරු ප්‍රමාණය (Font Size)' : 'Font Size'),
-            subtitle: Slider(
-              min: 14.0,
-              max: 32.0,
-              divisions: 9,
-              value: fontSize,
-              label: fontSize.round().toString(),
-              onChanged: onFontSizeChanged,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 class HomeScreen extends StatefulWidget {
@@ -195,7 +153,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Song> _songs = [];
   List<Song> _filteredSongs = [];
   final TextEditingController _searchController = TextEditingController();
-  String _selectedFile = 'All';
+  String _selectedFolder = 'All';
 
   @override
   void initState() {
@@ -220,12 +178,13 @@ class _HomeScreenState extends State<HomeScreen> {
             id: '1',
             title: "ස්තුතිය පූජා වේවා",
             singlishTitle: "sthuthi puja wewa",
-            fileName: "ප්‍රශංසා ගීතිකා",
+            folderName: "ප්‍රශංසා ගීතිකා",
             lyrics: "[C]ස්තුතිය පූජා [G]වේවා\n[Am]දෙවියන් වහන්සේට [F]වේවා",
           )
         ];
         _filterSongs();
       });
+      _saveSongsToPrefs();
     }
   }
 
@@ -235,59 +194,103 @@ class _HomeScreenState extends State<HomeScreen> {
         'saved_songs', jsonEncode(_songs.map((e) => e.toJson()).toList()));
   }
 
+  List<String> get _availableFolders {
+    Set<String> folders = _songs
+        .where((song) => !song.isDeleted)
+        .map((song) => song.folderName)
+        .toSet();
+    return folders.toList();
+  }
+
   void _filterSongs() {
     final query = _searchController.text.toLowerCase();
     setState(() {
       _filteredSongs = _songs.where((song) {
+        if (song.isDeleted) return false;
         bool matchesSearch = song.title.toLowerCase().contains(query) ||
-            song.singlishTitle.toLowerCase().contains(query);
-        bool matchesFile =
-            _selectedFile == 'All' || song.fileName == _selectedFile;
-        return matchesSearch && matchesFile;
+            song.singlishTitle.toLowerCase().contains(query) ||
+            song.folderName.toLowerCase().contains(query);
+        bool matchesFolder =
+            _selectedFolder == 'All' || song.folderName == _selectedFolder;
+        return matchesSearch && matchesFolder;
       }).toList();
     });
-  }
-
-  List<String> get _availableFiles {
-    Set<String> files = _songs.map((s) => s.fileName).toSet();
-    return files.toList();
   }
 
   void _navigateToAddSong() async {
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
-          builder: (context) => AddEditSongScreen(existingFiles: _availableFiles)),
+        builder: (context) => AddEditSongScreen(existingFolders: _availableFolders),
+      ),
     );
-    if (result != null && result is Song) {
-      setState(() {
-        _songs.add(result);
-      });
-      await _saveSongsToPrefs();
-      _filterSongs();
+    if (result == true) {
+      _loadSongs();
     }
   }
 
-  void _deleteSong(String id) async {
+  void _moveToRecycleBin(Song song) {
     setState(() {
-      _songs.removeWhere((song) => song.id == id);
+      song.isDeleted = true;
       _filterSongs();
     });
-    await _saveSongsToPrefs();
+    _saveSongsToPrefs();
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(widget.isSinhala ? 'ගීතිකාව ඉවත් කරන ලදී' : 'Song deleted')),
+      SnackBar(
+        content: Text(widget.isSinhala ? 'ගීතිකාව ඉවත් කරන ලදී (Recycle Bin වෙත)' : 'Song moved to Recycle Bin'),
+        action: SnackBarAction(
+          label: widget.isSinhala ? 'අස්ථානගත කිරීම අවලංගු කරන්න' : 'Undo',
+          onPressed: () {
+            setState(() {
+              song.isDeleted = false;
+              _filterSongs();
+            });
+            _saveSongsToPrefs();
+          },
+        ),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     bool si = widget.isSinhala;
-    List<String> files = _availableFiles;
+    List<String> folders = _availableFolders;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(si ? 'Rhythm of Grace ගීතිකා පුස්තකාලය' : 'Rhythm of Grace Library'),
+        title: Text(si ? 'Rhythm of Grace පුස්තකාලය' : 'Rhythm of Grace Library'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.delete_outline),
+            tooltip: si ? 'රිසයිකල් බින්' : 'Recycle Bin',
+            onPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => RecycleBinScreen(
+                    songs: _songs,
+                    onRestore: (song) {
+                      setState(() {
+                        song.isDeleted = false;
+                        _filterSongs();
+                      });
+                      _saveSongsToPrefs();
+                    },
+                    onDeletePermanent: (song) {
+                      setState(() {
+                        _songs.removeWhere((s) => s.id == song.id);
+                        _filterSongs();
+                      });
+                      _saveSongsToPrefs();
+                    },
+                    isSinhala: si,
+                  ),
+                ),
+              );
+              _loadSongs();
+            },
+          ),
           IconButton(
             icon: Icon(widget.isDarkMode ? Icons.light_mode : Icons.dark_mode),
             onPressed: widget.toggleTheme,
@@ -318,48 +321,47 @@ class _HomeScreenState extends State<HomeScreen> {
               controller: _searchController,
               onChanged: (val) => _filterSongs(),
               decoration: InputDecoration(
-                hintText: si ? 'ගීතිකාව සොයන්න (සිංහල / Singlish)...' : 'Search song...',
+                hintText: si ? 'ගීතිකාව හෝ ෆයිල් නම සොයන්න...' : 'Search song or folder...',
                 prefixIcon: const Icon(Icons.search),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                 filled: true,
               ),
             ),
           ),
-          if (files.isNotEmpty)
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Row(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8.0),
-                    child: ChoiceChip(
-                      label: Text(si ? 'සියලුම ගීතිකා' : 'All Files'),
-                      selected: _selectedFile == 'All',
-                      onSelected: (selected) {
-                        setState(() {
-                          _selectedFile = 'All';
-                          _filterSongs();
-                        });
-                      },
-                    ),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(right: 8.0),
+                  child: ChoiceChip(
+                    label: Text(si ? 'සියල්ල' : 'All'),
+                    selected: _selectedFolder == 'All',
+                    onSelected: (selected) {
+                      setState(() {
+                        _selectedFolder = 'All';
+                        _filterSongs();
+                      });
+                    },
                   ),
-                  ...files.map((file) => Padding(
-                        padding: const EdgeInsets.only(right: 8.0),
-                        child: ChoiceChip(
-                          label: Text(file),
-                          selected: _selectedFile == file,
-                          onSelected: (selected) {
-                            setState(() {
-                              _selectedFile = file;
-                              _filterSongs();
-                            });
-                          },
-                        ),
-                      )),
-                ],
-              ),
+                ),
+                ...folders.map((folder) => Padding(
+                      padding: const EdgeInsets.only(right: 8.0),
+                      child: ChoiceChip(
+                        label: Text(folder),
+                        selected: _selectedFolder == folder,
+                        onSelected: (selected) {
+                          setState(() {
+                            _selectedFolder = folder;
+                            _filterSongs();
+                          });
+                        },
+                      ),
+                    )),
+              ],
             ),
+          ),
           const SizedBox(height: 10),
           Expanded(
             child: _filteredSongs.isEmpty
@@ -373,40 +375,32 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: ListTile(
                           title: Text(song.title,
                               style: const TextStyle(fontWeight: FontWeight.bold)),
-                          subtitle: Text('📁 ${song.fileName} • ${song.singlishTitle}',
+                          subtitle: Text('📁 ${song.folderName} • ${song.singlishTitle}',
                               style: TextStyle(color: Colors.grey[600])),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               IconButton(
                                 icon: const Icon(Icons.delete, color: Colors.redAccent),
-                                onPressed: () => _deleteSong(song.id),
-                                tooltip: si ? 'මකන්න' : 'Delete',
+                                onPressed: () => _moveToRecycleBin(song),
                               ),
                               const Icon(Icons.arrow_forward_ios, size: 16),
                             ],
                           ),
                           onTap: () async {
-                            final updatedSong = await Navigator.push(
+                            final updated = await Navigator.push(
                               context,
                               MaterialPageRoute(
                                 builder: (context) => SongDetailScreen(
                                   song: song,
                                   fontSize: widget.fontSize,
                                   isSinhala: si,
-                                  existingFiles: files,
+                                  existingFolders: _availableFolders,
                                 ),
                               ),
                             );
-                            if (updatedSong != null && updatedSong is Song) {
-                              setState(() {
-                                int idx = _songs.indexWhere((s) => s.id == updatedSong.id);
-                                if (idx != -1) {
-                                  _songs[idx] = updatedSong;
-                                }
-                              });
-                              await _saveSongsToPrefs();
-                              _filterSongs();
+                            if (updated == true) {
+                              _loadSongs();
                             }
                           },
                         ),
@@ -427,56 +421,81 @@ class _HomeScreenState extends State<HomeScreen> {
 
 class AddEditSongScreen extends StatefulWidget {
   final Song? songToEdit;
-  final List<String> existingFiles;
+  final List<String> existingFolders;
 
-  const AddEditSongScreen({super.key, this.songToEdit, required this.existingFiles});
+  const AddEditSongScreen({super.key, this.songToEdit, required this.existingFolders});
 
   @override
   State<AddEditSongScreen> createState() => _AddEditSongScreenState();
 }
 
 class _AddEditSongScreenState extends State<AddEditSongScreen> {
-  late TextEditingController _titleController;
-  late TextEditingController _singlishController;
-  late TextEditingController _lyricsController;
-  late TextEditingController _fileController;
-  bool _isNewFileSelected = false;
-  String _selectedExistingFile = '';
+  final _titleController = TextEditingController();
+  final _singlishController = TextEditingController();
+  final _lyricsController = TextEditingController();
+  final _folderController = TextEditingController();
+  String _selectedFolder = '';
 
   @override
   void initState() {
     super.initState();
-    _titleController = TextEditingController(text: widget.songToEdit?.title ?? '');
-    _singlishController = TextEditingController(text: widget.songToEdit?.singlishTitle ?? '');
-    _lyricsController = TextEditingController(text: widget.songToEdit?.lyrics ?? '');
-    
-    String initialFile = widget.songToEdit?.fileName ?? (widget.existingFiles.isNotEmpty ? widget.existingFiles[0] : 'පොදු ෆයිල් එක');
-    _selectedExistingFile = initialFile;
-    _fileController = TextEditingController(text: initialFile);
+    if (widget.songToEdit != null) {
+      _titleController.text = widget.songToEdit!.title;
+      _singlishController.text = widget.songToEdit!.singlishTitle;
+      _lyricsController.text = widget.songToEdit!.lyrics;
+      _selectedFolder = widget.songToEdit!.folderName;
+      _folderController.text = _selectedFolder;
+    } else {
+      _selectedFolder = widget.existingFolders.isNotEmpty ? widget.existingFolders[0] : 'ප්‍රශංසා';
+      _folderController.text = _selectedFolder;
+    }
   }
 
-  void _save() {
+  Future<void> _saveSong() async {
     if (_titleController.text.isEmpty || _lyricsController.text.isEmpty) return;
 
-    String finalFile = _isNewFileSelected ? _fileController.text.trim() : _selectedExistingFile;
-    if (finalFile.isEmpty) finalFile = 'පොදු ෆයිල් එක';
+    final prefs = await SharedPreferences.getInstance();
+    final String? songsString = prefs.getString('saved_songs');
+    List<Song> songs = [];
 
-    Song song = Song(
-      id: widget.songToEdit?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
-      title: _titleController.text.trim(),
-      singlishTitle: _singlishController.text.trim(),
-      fileName: finalFile,
-      lyrics: _lyricsController.text,
-    );
+    if (songsString != null) {
+      List decoded = jsonDecode(songsString);
+      songs = decoded.map((item) => Song.fromJson(item)).toList();
+    }
 
-    Navigator.pop(context, song);
+    String folder = _folderController.text.trim().isEmpty
+        ? 'සාමාන්‍ය'
+        : _folderController.text.trim();
+
+    if (widget.songToEdit != null) {
+      final index = songs.indexWhere((s) => s.id == widget.songToEdit!.id);
+      if (index != -1) {
+        songs[index].title = _titleController.text;
+        songs[index].singlishTitle = _singlishController.text;
+        songs[index].folderName = folder;
+        songs[index].lyrics = _lyricsController.text;
+      }
+    } else {
+      songs.add(Song(
+        id: DateTime.now().toIso8601String(),
+        title: _titleController.text,
+        singlishTitle: _singlishController.text,
+        folderName: folder,
+        lyrics: _lyricsController.text,
+      ));
+    }
+
+    await prefs.setString(
+        'saved_songs', jsonEncode(songs.map((e) => e.toJson()).toList()));
+
+    Navigator.pop(context, true);
   }
 
   @override
   Widget build(BuildContext context) {
     bool isEditing = widget.songToEdit != null;
     return Scaffold(
-      appBar: AppBar(title: Text(isEditing ? 'ගීතිකාව වෙනස් කරන්න' : 'නව ගීතිකාවක් එක් කරන්න')),
+      appBar: AppBar(title: Text(isEditing ? 'ගීතිකාව වෙනස් කරන්න (Edit Song)' : 'නව ගීතිකාවක් එක් කරන්න')),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: ListView(
@@ -490,36 +509,15 @@ class _AddEditSongScreenState extends State<AddEditSongScreen> {
               controller: _singlishController,
               decoration: const InputDecoration(labelText: 'Singlish නම (උදා: sthuthi puja wewa)'),
             ),
-            const SizedBox(height: 15),
-            Row(
-              children: [
-                Expanded(
-                  child: _isNewFileSelected
-                      ? TextField(
-                          controller: _fileController,
-                          decoration: const InputDecoration(labelText: 'අලුත් ෆයිල් නම (New File Name)'),
-                        )
-                      : DropdownButtonFormField<String>(
-                          value: widget.existingFiles.contains(_selectedExistingFile) ? _selectedExistingFile : null,
-                          decoration: const InputDecoration(labelText: 'ෆයිල් එකක් තෝරන්න (Select File)'),
-                          items: widget.existingFiles
-                              .map((f) => DropdownMenuItem(value: f, child: Text(f)))
-                              .toList(),
-                          onChanged: (val) => setState(() => _selectedExistingFile = val ?? ''),
-                        ),
-                ),
-                IconButton(
-                  icon: Icon(_isNewFileSelected ? Icons.list : Icons.create_new_folder, color: Colors.blue),
-                  onPressed: () {
-                    setState(() {
-                      _isNewFileSelected = !_isNewFileSelected;
-                    });
-                  },
-                  tooltip: 'අලුත් ෆයිල් එකක් සාදන්න / ලැයිස්තුවෙන් තෝරන්න',
-                ),
-              ],
+            const SizedBox(height: 10),
+            TextField(
+              controller: _folderController,
+              decoration: const InputDecoration(
+                labelText: 'ෆයිල් නම / කාණ්ඩය (Folder / File Name)',
+                helperText: 'ඔබට අවශ්‍ය නව ෆයිල් නමක් ටයිප් කරන්න පුළුවන්',
+              ),
             ),
-            const SizedBox(height: 15),
+            const SizedBox(height: 10),
             TextField(
               controller: _lyricsController,
               maxLines: 8,
@@ -531,9 +529,9 @@ class _AddEditSongScreenState extends State<AddEditSongScreen> {
             ),
             const SizedBox(height: 20),
             ElevatedButton(
-              onPressed: _save,
+              onPressed: _saveSong,
               style: ElevatedButton.styleFrom(padding: const EdgeInsets.all(14)),
-              child: Text(isEditing ? 'යාවත්කාලීන කරන්න' : 'සුරකින්න', style: const TextStyle(fontSize: 16)),
+              child: Text(isEditing ? 'යාවත්කාලීන කරන්න (Update)' : 'සුරකින්න (Save)', style: const TextStyle(fontSize: 16)),
             ),
           ],
         ),
@@ -546,14 +544,14 @@ class SongDetailScreen extends StatefulWidget {
   final Song song;
   final double fontSize;
   final bool isSinhala;
-  final List<String> existingFiles;
+  final List<String> existingFolders;
 
   const SongDetailScreen({
     super.key,
     required this.song,
     required this.fontSize,
     required this.isSinhala,
-    required this.existingFiles,
+    required this.existingFolders,
   });
 
   @override
@@ -561,12 +559,12 @@ class SongDetailScreen extends StatefulWidget {
 }
 
 class _SongDetailScreenState extends State<SongDetailScreen> {
-  late Song _currentSong;
   int _transposeStep = 0;
   final ScrollController _scrollController = ScrollController();
   Timer? _autoScrollTimer;
   bool _isAutoScrolling = false;
   double _scrollSpeed = 1.0;
+  late Song _currentSong;
 
   final List<String> _notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
@@ -617,20 +615,26 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     }
   }
 
-  void _editSong() async {
+  void _navigateToEdit() async {
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => AddEditSongScreen(
           songToEdit: _currentSong,
-          existingFiles: widget.existingFiles,
+          existingFolders: widget.existingFolders,
         ),
       ),
     );
-    if (result != null && result is Song) {
-      setState(() {
-        _currentSong = result;
-      });
+    if (result == true) {
+      final prefs = await SharedPreferences.getInstance();
+      final String? songsString = prefs.getString('saved_songs');
+      if (songsString != null) {
+        List decoded = jsonDecode(songsString);
+        List<Song> allSongs = decoded.map((item) => Song.fromJson(item)).toList();
+        setState(() {
+          _currentSong = allSongs.firstWhere((s) => s.id == _currentSong.id, orElse: () => _currentSong);
+        });
+      }
     }
   }
 
@@ -645,60 +649,197 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
   Widget build(BuildContext context) {
     String processedLyrics = _processLyrics(_currentSong.lyrics, _transposeStep);
     bool si = widget.isSinhala;
-  }
-    return PopScope(
-      canPop: false,
-      onPopInvoked: (didPop) {
-        if (didPop) return;
-        Navigator.pop(context, _currentSong);
+
+    return WillPopScope(
+      onWillPop: () async {
+        Navigator.pop(context, true);
+        return false;
       },
       child: Scaffold(
-        // ඉතුරු කෝඩ් එක මේ විදිහටම තියෙන්න දෙන්න...
         appBar: AppBar(
           title: Text(_currentSong.title),
           actions: [
             IconButton(
               icon: const Icon(Icons.edit),
-              onPressed: _editSong,
+              tooltip: si ? 'ගීතිකාව වෙනස් කරන්න' : 'Edit Song',
+              onPressed: _navigateToEdit,
+            ),
+            IconButton(
+              icon: const Icon(Icons.remove),
+              onPressed: () => setState(() => _transposeStep--),
+              tooltip: 'Transpose Down',
+            ),
+            Center(child: Text('$_transposeStep', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold))),
+            IconButton(
+              icon: const Icon(Icons.add),
+              onPressed: () => setState(() => _transposeStep++),
+              tooltip: 'Transpose Up',
             ),
           ],
         ),
-        body: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+        body: Column(
+          children: [
+            Container(
+              color: Colors.blue.withOpacity(0.1),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(si ? 'Transpose: ' : 'Transpose: '),
-                  IconButton(
-                    icon: const Icon(Icons.remove),
-                    onPressed: () => setState(() => _transposeStep--),
+                  ElevatedButton.icon(
+                    onPressed: _toggleAutoScroll,
+                    icon: Icon(_isAutoScrolling ? Icons.pause : Icons.play_arrow),
+                    label: Text(_isAutoScrolling ? (si ? 'නවතන්න' : 'Stop') : 'Auto Scroll'),
                   ),
-                  Text('$_transposeStep', style: const TextStyle(fontWeight: FontWeight.bold)),
-                  IconButton(
-                    icon: const Icon(Icons.add),
-                    onPressed: () => setState(() => _transposeStep++),
+                  Row(
+                    children: [
+                      Text(si ? 'වේගය: ' : 'Speed: '),
+                      Slider(
+                        value: _scrollSpeed,
+                        min: 0.5,
+                        max: 3.0,
+                        divisions: 5,
+                        label: _scrollSpeed.toString(),
+                        onChanged: (val) => setState(() => _scrollSpeed = val),
+                      ),
+                    ],
                   ),
                 ],
               ),
-              const Divider(),
-              Expanded(
-                child: SingleChildScrollView(
-                  controller: _scrollController,
-                  child: Text(
-                    processedLyrics,
-                    style: TextStyle(fontSize: widget.fontSize),
-                  ),
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                controller: _scrollController,
+                padding: const EdgeInsets.all(20.0),
+                child: Text(
+                  processedLyrics,
+                  style: TextStyle(fontSize: widget.fontSize, height: 1.8),
                 ),
               ),
-            ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class RecycleBinScreen extends StatefulWidget {
+  final List<Song> songs;
+  final Function(Song) onRestore;
+  final Function(Song) onDeletePermanent;
+  final bool isSinhala;
+
+  const RecycleBinScreen({
+    super.key,
+    required this.songs,
+    required this.onRestore,
+    required this.onDeletePermanent,
+    required this.isSinhala,
+  });
+
+  @override
+  State<RecycleBinScreen> createState() => _RecycleBinScreenState();
+}
+
+class _RecycleBinScreenState extends State<RecycleBinScreen> {
+  @override
+  Widget build(BuildContext context) {
+    bool si = widget.isSinhala;
+    List<Song> deletedSongs = widget.songs.where((s) => s.isDeleted).toList();
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(si ? 'රිසයිකල් බින් (Recycle Bin)' : 'Recycle Bin'),
+      ),
+      body: deletedSongs.isEmpty
+          ? Center(
+              child: Text(si ? 'රිසයිකල් බින් එක හිස්ය' : 'Recycle Bin is empty'),
+            )
+          : ListView.builder(
+              itemCount: deletedSongs.length,
+              itemBuilder: (context, index) {
+                final song = deletedSongs[index];
+                return Card(
+                  margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  child: ListTile(
+                    title: Text(song.title,
+                        style: const TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: Text(song.singlishTitle),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.restore, code: null, color: Colors.green),
+                          tooltip: si ? 'යථා තත්ත්වයට පත් කරන්න' : 'Restore',
+                          onPressed: () {
+                            widget.onRestore(song);
+                            setState(() {});
+                          },
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete_forever, color: Colors.red),
+                          tooltip: si ? 'සම්පූර්ණයෙන්ම ඉවත් කරන්න' : 'Delete Forever',
+                          onPressed: () {
+                            widget.onDeletePermanent(song);
+                            setState(() {});
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+    );
+  }
+}
+
+class SettingsScreen extends StatefulWidget {
+  final double fontSize;
+  final Function(double) onFontSizeChanged;
+  final bool isSinhala;
+  final Function(bool) toggleLanguage;
+
+  const SettingsScreen({
+    super.key,
+    required this.fontSize,
+    required this.onFontSizeChanged,
+    required this.isSinhala,
+    required this.toggleLanguage,
+  });
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  @override
+  Widget build(BuildContext context) {
+    bool si = widget.isSinhala;
+    return Scaffold(
+      appBar: AppBar(title: Text(si ? 'සැකසුම්' : 'Settings')),
+      body: ListView(
+        padding: const EdgeInsets.all(16.0),
+        children: [
+          SwitchListTile(
+            title: Text(si ? 'සිංහල භාෂාව (Sinhala)' : 'Sinhala Language'),
+            subtitle: Text(si ? 'ඇප් එකේ භාෂාව සිංහල/ඉංග්‍රීසි මාරු කරන්න' : 'Toggle app language between Sinhala and English'),
+            value: widget.isSinhala,
+            onChanged: widget.toggleLanguage,
           ),
-        ),
-        floatingActionButton: FloatingActionButton(
-          onPressed: _toggleAutoScroll,
-          child: Icon(_isAutoScrolling ? Icons.pause : Icons.play_arrow),
-        ),
+          const Divider(),
+          ListTile(
+            title: Text(si ? 'අකුරු ප්‍රමාණය (Font Size)' : 'Font Size'),
+            subtitle: Slider(
+              value: widget.fontSize,
+              min: 14.0,
+              max: 36.0,
+              divisions: 11,
+              label: widget.fontSize.round().toString(),
+              onChanged: widget.onFontSizeChanged,
+            ),
+          ),
+        ],
       ),
     );
   }
