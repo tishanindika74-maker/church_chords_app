@@ -229,7 +229,7 @@ class _HomeScreenState extends State<HomeScreen> {
     });
     await _saveSongsToPrefs();
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(widget.isSinhala ? 'ගීතිකාව ඉවත් කරන ලදී (Recycle Bin)' : 'Song deleted')),
+      SnackBar(content: Text(widget.isSinhala ? 'ගීතිකාව ඉවත් කරන ලදී' : 'Song deleted')),
     );
   }
 
@@ -405,11 +405,7 @@ class _AddEditSongScreenState extends State<AddEditSongScreen> {
     _lyricsController = TextEditingController(text: widget.songToEdit?.lyrics ?? '');
     
     String initialFile = widget.songToEdit?.fileName ?? (widget.existingFiles.isNotEmpty ? widget.existingFiles[0] : 'පොදු ෆයිල් එක');
-    if (widget.existingFiles.contains(initialFile)) {
-      _selectedExistingFile = initialFile;
-    } else {
-      _selectedExistingFile = initialFile;
-    }
+    _selectedExistingFile = initialFile;
     _fileController = TextEditingController(text: initialFile);
   }
 
@@ -434,7 +430,7 @@ class _AddEditSongScreenState extends State<AddEditSongScreen> {
   Widget build(BuildContext context) {
     bool isEditing = widget.songToEdit != null;
     return Scaffold(
-      appBar: AppBar(title: Text(isEditing ? 'ගීතිකාව වෙනස් කරන්න (Edit Song)' : 'නව ගීතිකාවක් එක් කරන්න')),
+      appBar: AppBar(title: Text(isEditing ? 'ගීතිකාව වෙනස් කරන්න' : 'නව ගීතිකාවක් එක් කරන්න')),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: ListView(
@@ -491,7 +487,7 @@ class _AddEditSongScreenState extends State<AddEditSongScreen> {
             ElevatedButton(
               onPressed: _save,
               style: ElevatedButton.styleFrom(padding: const EdgeInsets.all(14)),
-              child: Text(isEditing ? 'යාවත්කාලීන කරන්න (Update)' : 'සුරකින්න (Save)', style: const TextStyle(fontSize: 16)),
+              child: Text(isEditing ? 'යාවත්කාලීන කරන්න' : 'සුරකින්න', style: const TextStyle(fontSize: 16)),
             ),
           ],
         ),
@@ -611,4 +607,9 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       },
       child: Scaffold(
         appBar: AppBar(
-          title: Text(
+          title: Text(_currentSong.title),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.edit),
+              onPressed: _editSong,
+              
